@@ -1,0 +1,26 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 本地密钥 / 环境变量文件(切勿提交)
+.env
+.env.local
+application-local.yml
+application-local.yaml
+*.pem
+*.key
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.swp
