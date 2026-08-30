@@ -52,9 +52,22 @@ public class PracticeController {
         return Result.success(practiceService.aiExplain(questionId));
     }
 
+    /** AI 智能解析(RAG 增强:检索相似题作为参考上下文) */
+    @PostMapping("/ai-explain-rag")
+    public Result<String> aiExplainRag(@RequestParam Long questionId) {
+        return Result.success(practiceService.aiExplainWithRag(questionId));
+    }
+
     /** 智能推荐 */
     @GetMapping("/recommend")
     public Result<List<QuestionVO>> recommend(@RequestParam(defaultValue = "10") int count) {
         return Result.success(practiceService.recommend(count));
+    }
+
+    /** 相似题推荐(RAG 语义检索) */
+    @GetMapping("/similar")
+    public Result<List<QuestionVO>> similar(@RequestParam Long questionId,
+                                            @RequestParam(defaultValue = "5") int count) {
+        return Result.success(practiceService.similar(questionId, count));
     }
 }

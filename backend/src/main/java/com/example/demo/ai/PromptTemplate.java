@@ -78,6 +78,29 @@ public class PromptTemplate {
     }
 
     /**
+     * AI 智能解析提示词(RAG 增强:带相似参考题上下文)
+     */
+    public Prompt explainWithContext(String content, String options, String answer, String context) {
+        String system = "你是一位耐心的学习辅导老师,擅长用通俗易懂的方式讲解题目。";
+        String user = """
+                下面是几道与当前题目相似的参考题(含答案与解析),请参考它们的解析风格和涉及的知识点,为当前题目生成详细、易懂的解析。
+
+                【相似参考题】
+                %s
+
+                【当前题目】
+                %s
+                %s
+
+                【参考答案】
+                %s
+
+                请直接输出解析文字,包括解题思路、涉及的知识点和易错点。
+                """.formatted(context, content, (options == null ? "" : options), answer);
+        return new Prompt(system, user);
+    }
+
+    /**
      * 主观题 AI 判分提示词
      */
     public Prompt judge(String content, String answer, String userAnswer, int fullScore) {

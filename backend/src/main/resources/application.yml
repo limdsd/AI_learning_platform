@@ -32,6 +32,13 @@ deepseek:
   base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
   model: ${DEEPSEEK_MODEL:deepseek-v4-pro}
 
+# Embedding 向量化配置(用于相似题语义检索 RAG)
+# api-key 从环境变量 EMBEDDING_API_KEY 读取;base-url 默认硅基流动(免费 bge-m3)
+embedding:
+  api-key: ${EMBEDDING_API_KEY:}
+  base-url: ${EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+  model: ${EMBEDDING_MODEL:BAAI/bge-m3}
+
 # JWT 配置
 # 密钥从环境变量 JWT_SECRET 读取;本地开发可在 application-local.yml(已 gitignore)里配置
 jwt:

@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.demo.ai.DeepSeekClient;
+import com.example.demo.ai.EmbeddingClient;
 import com.example.demo.ai.PromptTemplate;
 import com.example.demo.common.BizException;
 import com.example.demo.dto.PracticeResult;
@@ -16,6 +17,7 @@ import com.example.demo.mapper.QuestionMapper;
 import com.example.demo.mapper.WrongQuestionMapper;
 import com.example.demo.security.UserContext;
 import com.example.demo.util.JudgeUtil;
+import com.example.demo.util.VectorUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -29,6 +31,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PracticeService {
 
+    /** RAG 检索相似题的参考条数 */
+    private static final int RAG_TOP_K = 3;
+
     private final QuestionMapper questionMapper;
     private final PracticeRecordMapper practiceRecordMapper;
     private final WrongQuestionMapper wrongQuestionMapper;
@@ -36,6 +41,7 @@ public class PracticeService {
     private final DeepSeekClient deepSeekClient;
     private final PromptTemplate promptTemplate;
     private final WrongQuestionService wrongQuestionService;
+    private final EmbeddingClient embeddingClient;
 
     /**
      * 抽题(按知识点/难度,随机)
@@ -174,6 +180,78 @@ public class PracticeService {
         List<Question> list = questionMapper.selectList(new LambdaQueryWrapper<Question>()
                 .last("ORDER BY RAND() LIMIT " + count));
         return list.stream().map(questionService::toVOWithoutAnswer).toList();
+    }
+
+    /**
+     * 相似题检索(RAG 的 R):基于 embedding 向量,找出与指定题语义最相近的题目
+     */
+    public List<QuestionVO> similar(Long questionId, int count) {
+        Question target = questionMapper.selectById(questionId);
+        if (target == null) {
+            throw new BizException("题目不存在");
+        }
+        return retrieveSimilarQuestions(target, count).stream()
+                .map(questionService::toVOWithoutAnswer)
+                .toList();
+    }
+
+    /**
+     * AI 智能解析(RAG 增强版):先检索相似题作为参考上下文,再让大模型生成解析
+     */
+    public String aiExplainWithRag(Long questionId) {
+        Question q = questionMapper.selectById(questionId);
+        if (q == null) {
+            throw new BizException("题目不存在");
+        }
+        List<Question> similar = retrieveSimilarQuestions(q, RAG_TOP_K);
+        StringBuilder ctx = new StringBuilder();
+        for (int i = 0; i < similar.size(); i++) {
+            Question s = similar.get(i);
+            ctx.append(i + 1).append(". ").append(s.getContent());
+            if (StringUtils.hasText(s.getAnswer())) {
+                ctx.append("\n   答案:").append(s.getAnswer());
+            }
+            if (StringUtils.hasText(s.getAnalysis())) {
+                ctx.append("\n   解析:").append(s.getAnalysis());
+            }
+            ctx.append("\n");
+        }
+        String context = ctx.toString().isBlank() ? "暂无相似参考题" : ctx.toString();
+        PromptTemplate.Prompt prompt = promptTemplate.explainWithContext(
+                q.getContent(), q.getOptions(), q.getAnswer(), context);
+        return deepSeekClient.chat(prompt.system(), prompt.user(), false);
+    }
+
+    /** 检索与目标题语义最相近的 limit 道题(返回完整实体,含答案解析) */
+    private List<Question> retrieveSimilarQuestions(Question target, int limit) {
+        List<Question> candidates = questionMapper.selectList(new LambdaQueryWrapper<Question>()
+                .ne(Question::getId, target.getId()));
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        // 目标题 + 候选题一起批量向量化
+        List<String> texts = new ArrayList<>();
+        texts.add(target.getContent());
+        for (Question q : candidates) {
+            texts.add(q.getContent());
+        }
+        List<float[]> vectors = embeddingClient.embed(texts);
+        float[] targetVec = vectors.get(0);
+
+        // 逐个算余弦相似度,排序取 Top-K
+        List<QuestionSimilarity> scored = new ArrayList<>();
+        for (int i = 0; i < candidates.size(); i++) {
+            double sim = VectorUtil.cosineSimilarity(targetVec, vectors.get(i + 1));
+            scored.add(new QuestionSimilarity(candidates.get(i), sim));
+        }
+        scored.sort((a, b) -> Double.compare(b.sim, a.sim));
+
+        return scored.stream().limit(limit).map(s -> s.question).toList();
+    }
+
+    /** 题目与相似度 */
+    private record QuestionSimilarity(Question question, double sim) {
     }
 
 }

@@ -1,0 +1,186 @@
+### ============================================================
+### AI 智能学习平台 —— 接口测试文件(IDEA HTTP Client)
+###
+### 怎么用:
+###   1. 先启动后端(8081)
+###   2. 在 IDEA 里打开本文件,每个请求左侧会有绿色 ▶ 箭头
+###   3. 【先点「1. 登录」】,token 会自动保存到全局变量
+###   4. 之后从上往下挨个点即可(带 {{token}} 的请求自动带登录态)
+###
+### 题型 type:    single(单选) / multiple(多选) / judge(判断)
+###               / fill(填空) / short_answer(简答)
+### 难度 difficulty: easy / medium / hard
+### ============================================================
+
+@host = http://localhost:8081
+
+### 0. 注册(仅第一次跑;已注册过就跳过)
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "testuser1",
+  "password": "123456",
+  "nickname": "测试用户"
+}
+
+### 1. 登录(⭐先跑这个,token 自动保存,后面的请求都依赖它)
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "testuser1",
+  "password": "123456"
+}
+
+> {%
+  client.global.set("token", response.body.data.token);
+%}
+
+### ============================================================
+### 场景一:智能生成题目
+### ============================================================
+
+### 2. AI 智能出题(输入知识点→DeepSeek 自动出题并入库)
+POST {{host}}/api/question/ai-generate
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "knowledgePoint": "Java基础",
+  "type": "single",
+  "difficulty": "easy",
+  "count": 3
+}
+
+### 3. 手动新增题目(不走 AI,直接入库)
+POST {{host}}/api/question
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "type": "single",
+  "content": "Java 中用于定义常量的关键字是?",
+  "options": "[{\"key\":\"A\",\"text\":\"final\"},{\"key\":\"B\",\"text\":\"const\"}]",
+  "answer": "A",
+  "analysis": "final 用于声明常量",
+  "knowledgePoint": "Java基础",
+  "difficulty": "easy"
+}
+
+### 4. 题库分页查询(可按知识点/题型/难度筛选)
+GET {{host}}/api/question/page?page=1&size=10&type=single&difficulty=easy
+Authorization: Bearer {{token}}
+
+### 5. 更新题目(把 123 换成真实题目 id)
+PUT {{host}}/api/question/123
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "type": "single",
+  "content": "更新后的题干",
+  "options": "[{\"key\":\"A\",\"text\":\"选项A\"},{\"key\":\"B\",\"text\":\"选项B\"}]",
+  "answer": "A"
+}
+
+### 6. 删除题目(把 123 换成真实题目 id)
+DELETE {{host}}/api/question/123
+Authorization: Bearer {{token}}
+
+### ============================================================
+### 场景二:智能刷题
+### ============================================================
+
+### 7. 抽题(按难度/知识点随机抽 count 道)
+GET {{host}}/api/practice/questions?count=5&difficulty=easy
+Authorization: Bearer {{token}}
+
+### 8. 提交作答(questionId 换成上一步返回的题目 id;答错会自动进错题本)
+POST {{host}}/api/practice/submit
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "questionId": 123,
+  "userAnswer": "A",
+  "costSeconds": 15
+}
+
+### 9. 错题列表
+GET {{host}}/api/practice/wrong
+Authorization: Bearer {{token}}
+
+### 10. 标记错题已掌握(把 123 换成错题 id)
+POST {{host}}/api/practice/wrong/123/master
+Authorization: Bearer {{token}}
+
+### 11. AI 智能解析(questionId 换成题目 id)
+POST {{host}}/api/practice/ai-explain?questionId=123
+Authorization: Bearer {{token}}
+
+### 11.5 AI 智能解析(RAG 增强版:检索相似题作为上下文;需配置 EMBEDDING_API_KEY)
+POST {{host}}/api/practice/ai-explain-rag?questionId=123
+Authorization: Bearer {{token}}
+
+### 12. 个性化推荐(基于错题薄弱知识点推荐)
+GET {{host}}/api/practice/recommend?count=5
+Authorization: Bearer {{token}}
+
+### 12.5 相似题推荐(RAG 语义检索;questionId 换成题目 id;需配置 EMBEDDING_API_KEY)
+GET {{host}}/api/practice/similar?questionId=123&count=5
+Authorization: Bearer {{token}}
+
+### ============================================================
+### 场景三:智能考试
+### ============================================================
+
+### 13. AI 组卷(生成试卷,examId 自动保存到全局变量)
+POST {{host}}/api/exam/generate
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Java期末考试",
+  "durationMinutes": 30,
+  "knowledgePoint": "Java基础",
+  "type": "single",
+  "difficulty": "easy",
+  "count": 3
+}
+
+> {%
+  client.global.set("examId", response.body.data.id);
+%}
+
+### 14. 试卷列表
+GET {{host}}/api/exam/list
+Authorization: Bearer {{token}}
+
+### 15. 试卷详情(作答前隐藏答案)
+GET {{host}}/api/exam/{{examId}}/detail
+Authorization: Bearer {{token}}
+
+### 16. 开始考试(创建考试记录,recordId 自动保存)
+POST {{host}}/api/exam/{{examId}}/start
+Authorization: Bearer {{token}}
+
+> {%
+  client.global.set("recordId", response.body.data.id);
+%}
+
+### 17. 交卷(questionId 换成第 13 步返回里的题目 id;客观题自动判分)
+POST {{host}}/api/exam/{{examId}}/submit
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "recordId": {{recordId}},
+  "answers": [
+    {"questionId": 123, "userAnswer": "A"}
+  ]
+}
+
+### 18. 成绩报告(得分 + 逐题结果 + 解析)
+GET {{host}}/api/exam/record/{{recordId}}
+Authorization: Bearer {{token}}
